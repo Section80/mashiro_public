@@ -4,7 +4,6 @@ IOCP 게임 서버
 - 설명 자료: [파일 링크(PDF)](https://github.com/Section80/mashiro_public/blob/main/%EC%84%A4%EB%AA%85%20%EC%9E%90%EB%A3%8C.pdf)  
 
 소스코드는 일부만 업로드하였습니다. 
-면접 시 추가 공개 가능합니다. 
 
 # 소개
 ![slide2](https://github.com/Section80/mashiro_public/blob/main/images/slide2.png)
