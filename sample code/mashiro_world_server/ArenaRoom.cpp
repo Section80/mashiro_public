@@ -506,6 +506,20 @@ bool ArenaRoom::handleHpPortion(NetConn* pSender, arena_room::CS_HpPortion& pack
 	if (pPlayer->IsAlive() == false)
 		return true;
 
+	// 쿨타임 처리
+	const float HP_PORTION_COOLTIME = 5.0f;    // 클라 값과 일치해야 한다. 
+	LARGE_INTEGER now = QCGetCounter();
+	float elapsed = QCMeasureElapsedTick(now, pPlayer->LastPortionTime);
+	if (elapsed < HP_PORTION_COOLTIME)
+	{
+		// 클라는 서버가 스킬 사용 확인을 시켜준 후 서버보다 늦게 쿨타임을 시작함으로, 
+		// 쿨타임 전에 패킷을 보내면 disconnect() 시키는 것이 맞다. 
+		// 패킷이 늦게 도착하는 경우는 있어도 더 빠르게 도착하는 경우는 없기 때문이다. 
+		pSender->Disconnect();
+	
+		return true;
+	}
+
 	// hp 회복 처리
 	int oldHp = pPlayer->Hp;
 	pPlayer->Hp += packet.Amount;

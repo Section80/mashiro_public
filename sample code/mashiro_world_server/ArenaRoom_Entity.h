@@ -28,6 +28,7 @@ public:
 
 	int MaxHp;
 	int Hp;
+	LARGE_INTEGER LastPortionTime;
 
 	ULONGLONG RegisterCount;
 
