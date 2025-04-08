@@ -17,6 +17,7 @@ ArenaRoom::ArenaRoom(ConnSession* pMasterSession, int capacity)
 {
 	m_entityRegistery.Init();
 
+	// 벽 콜라이더 생성
 	walls[0].Init(Vec2f(-16.5f, -9.8f), Vec2f(0.6f, 20.4f));		// left
 	walls[1].Init(Vec2f(16.5f, -9.8f), Vec2f(0.6f, 20.4f));			// right
 	walls[2].Init(Vec2f(0.0f, 10.0f), Vec2f(32.4f, 0.6f));			// up
@@ -27,21 +28,17 @@ ArenaRoom::ArenaRoom(ConnSession* pMasterSession, int capacity)
 	AppendToList(&m_wallList, &walls[2].link);
 	AppendToList(&m_wallList, &walls[3].link);
 
+	// 플레이어 부활 위치 설정
 	m_spawnPoses[0] = Vec2f(0.0f, 0.0f);
 	m_spawnPoses[1] = Vec2f(-14.0f, 8.0f);
 	m_spawnPoses[2] = Vec2f(14.0f, 8.0f);
 	m_spawnPoses[3] = Vec2f(-14.0f, -8.0f);
 	m_spawnPoses[4] = Vec2f(14.0f, -8.0f);
-
-	//m_spawnPoses[0] = Vec2f(-20.0f, -20.0f);
-	//m_spawnPoses[1] = Vec2f(-20.0f, -20.0f);
-	//m_spawnPoses[2] = Vec2f(-20.0f, -20.0f);
-	//m_spawnPoses[3] = Vec2f(-20.0f, -20.0f);
-	//m_spawnPoses[4] = Vec2f(-20.0f, -20.0f);
 }
 
 ArenaRoom::~ArenaRoom()
 {
+	// 원거리 공격 entity를 삭제한다. 
 	Link* pLink = m_attackList.pHead;
 	while (pLink != nullptr)
 	{
@@ -54,12 +51,16 @@ ArenaRoom::~ArenaRoom()
 		pLink = pNextLink;
 	}
 
+	// 모든 유저를 퇴장시킨다. 
 	leaveAll(eLeaveReason::RoomDestroyed, true);
+
+	// entityID 맵을 정리한다. 
 	m_entityRegistery.CleanUp();
 }
 
 bool ArenaRoom::Update(float dt)
 {
+	// 플레이어 업데이트 처리: 현재 속도를 고려해 충돌처리르 한다. 
 	Link* pLink = m_sessionList.pHead;
 	while (pLink != nullptr)
 	{
@@ -72,6 +73,7 @@ bool ArenaRoom::Update(float dt)
 		pLink = pNextLink;
 	}
 
+	// 원거리 공격 업데이트: 진행 방향으로 이동시키며 충돌 처리 및 피격 판정 처리한다. 
 	pLink = m_attackList.pHead;
 	while (pLink != nullptr)
 	{
@@ -87,6 +89,7 @@ bool ArenaRoom::Update(float dt)
 
 bool ArenaRoom::HandlePacket(NetConn* pSender, Packet& packet, bool bLog)
 {
+	// opcode 값에 따라 적절한 handler method를 호출한다. 
 	Opcode opcode = packet.GetOpcode();
 	if (IsIt<CS_StartMove>(opcode))
 		return handleStartMove(pSender, (CS_StartMove&)packet, false);
@@ -112,6 +115,7 @@ bool ArenaRoom::handleStartMove(NetConn* pSender, CS_StartMove& packet, bool bLo
 {
 	assert(pSender != nullptr);
 
+	// CS_StartMove 패킷의 velocity는 0이 아니여야 한다. 
 	if (packet.vel == Vec2f(0.0f, 0.0f))
 	{
 		pSender->Disconnect();
@@ -120,9 +124,10 @@ bool ArenaRoom::handleStartMove(NetConn* pSender, CS_StartMove& packet, bool bLo
 	}
 
 	PlayerEntity* pPlayer = getPlayerEntity(pSender);
-	if (pPlayer->IsAlive() == false)
+	if (pPlayer->IsAlive() == false)	// 이미 사망한 플레이어의 경우 무시한다. 
 		return true;
 
+	// 디버깅용 로그
 	if (bLog || pPlayer->GetNickname() == L"Hello")
 	{
 		printf("[info]CS_StartMove connID: %d \n", pSender->GetID());
@@ -131,13 +136,15 @@ bool ArenaRoom::handleStartMove(NetConn* pSender, CS_StartMove& packet, bool bLo
 		wprintf(L" - error Y : %f \n", error.y);
 	}
 
+	// 대쉬중이었다면 취소한다. 
 	pPlayer->bIsDashing = false;
 
+	// 클라이언트가 보낸 위치가 벽에 끼어있는지 확인한다. 
 	Vec2f posBackup = pPlayer->Pos;
 	pPlayer->Dir = packet.vel;
 	pPlayer->Pos = packet.pos;
 	void* pRes = isInWall(pPlayer);
-	if (pRes != nullptr)
+	if (pRes != nullptr)    // 디버깅용 assert 처리
 		DebugBreak();
 	pPlayer->Vel = packet.vel;
 
@@ -167,10 +174,10 @@ bool ArenaRoom::handleStopMove(NetConn* pSender, CS_StopMove& packet, bool bLog)
 	assert(pSender != nullptr);
 
 	PlayerEntity* pPlayer = getPlayerEntity(pSender);
-	if (pPlayer->IsAlive() == false)
+	if (pPlayer->IsAlive() == false)    // 이미 사망한 플레이어의 경우 무시한다. 
 		return true;
 
-	pPlayer->bIsDashing = false;
+	// 디버깅용 로그
 	if (bLog || pPlayer->GetNickname() == L"Hello")
 	{
 		printf("[info]CS_StopMove connID: %d \n", pSender->GetID());
@@ -180,11 +187,15 @@ bool ArenaRoom::handleStopMove(NetConn* pSender, CS_StopMove& packet, bool bLog)
 		wprintf(L" - isDashing : %d \n", pPlayer->bIsDashing);
 	}
 
+	// 대쉬중이었다면 취소한다. 
+	pPlayer->bIsDashing = false;
+
+	// 클라이언트가 보낸 위치가 벽에 끼어있는지 확인한다. 
 	Vec2f posBackup = pPlayer->Pos;
 	pPlayer->Vel = Vec2f();
 	pPlayer->Pos = packet.pos;
 	void* pRes = isInWall(pPlayer);
-	if (pRes != nullptr)
+	if (pRes != nullptr)    // 디버깅용 assert 처리
 		DebugBreak();
 	pPlayer->Dir = packet.dir;
 
@@ -212,9 +223,10 @@ bool ArenaRoom::handleStopMove(NetConn* pSender, CS_StopMove& packet, bool bLog)
 bool ArenaRoom::handleDash(NetConn* pSender, CS_Dash& packet, bool bLog)
 {
 	PlayerEntity* pPlayer = getPlayerEntity(pSender);
-	if (pPlayer->IsAlive() == false)
+	if (pPlayer->IsAlive() == false)    // 이미 사망한 플레이어의 경우 무시한다. 
 		return true;
 
+	// 플레이어는 dash가 끝나면 항상 스스로 패킷을 보내기 때문에, 중복으로 보내면 쫒아내도 된다. 
 	if (pPlayer->bIsDashing)
 	{
 		pSender->Disconnect();
@@ -227,12 +239,14 @@ bool ArenaRoom::handleDash(NetConn* pSender, CS_Dash& packet, bool bLog)
 		printf("[info]CS_Dash connID: %d \n", pSender->GetID());
 	}
 
+	// 클라이언트가 보낸 위치가 벽에 끼어있는지 확인한다. 
 	Vec2f posBackup = pPlayer->Pos;
 	pPlayer->Pos = packet.pos;			// 대쉬 시작 위치 설정
 	void* pRes = isInWall(pPlayer);
 	if (pRes != nullptr)
 		DebugBreak();
 
+	// 지형과 충돌처리를 통해 대쉬 끝 위치를 직접 계산한다. 
 	Vec2f dashDelta = packet.dir.Normalized() * packet.DashDistance;
 	CollisionInfo info;
 	pPlayer->Sweep(m_wallList, dashDelta, &info);
@@ -244,6 +258,7 @@ bool ArenaRoom::handleDash(NetConn* pSender, CS_Dash& packet, bool bLog)
 
 	pPlayer->DashSpeed = packet.DashSpeed;
 
+	// 다른 유저에게 해당 유저의 대쉬 패킷을 보낸다. 
 	SC_Dash dash;
 	dash.entityID = pPlayer->entityID;
 	dash.speed = packet.DashSpeed;
@@ -264,7 +279,7 @@ bool ArenaRoom::handleDash(NetConn* pSender, CS_Dash& packet, bool bLog)
 
 bool ArenaRoom::handleMeleeAttack(NetConn* pSender, CS_MeleeAttack& packet, bool bLog)
 {
-	if (packet.Damage < 0)
+	if (packet.Damage < 0)    // invalid packet
 	{
 		pSender->Disconnect();
 
@@ -277,11 +292,13 @@ bool ArenaRoom::handleMeleeAttack(NetConn* pSender, CS_MeleeAttack& packet, bool
 	}
 
 	PlayerEntity* pPlayer = getPlayerEntity(pSender);
-	if (pPlayer->IsAlive() == false)
+	if (pPlayer->IsAlive() == false)    // 이미 사망한 플레이어의 경우 무시한다. 
 		return true;
 
+	// 대쉬중이었다면 취소한다. 
 	pPlayer->bIsDashing = false;
 
+	// 클라이언트가 보낸 위치가 벽에 끼어있는지 확인한다. 
 	packet.Dir.Normalize();
 	Vec2f posBackup = pPlayer->Pos;
 	pPlayer->Dir = packet.Dir;
@@ -291,24 +308,24 @@ bool ArenaRoom::handleMeleeAttack(NetConn* pSender, CS_MeleeAttack& packet, bool
 	if (pRes != nullptr)
 		DebugBreak();
 
+	// 근접 공격 AABB를 계산한다. 
 	Vec2f pos = packet.Pos + Vec2f(0.0f, pPlayer->Size.y / 2.0f) + packet.Dir * 1.4f;
 	Vec2f size(2.0f, 2.0f);
 	Aabb2D aabb(pos, size);
 	aabb.Pos -= aabb.Size / 2.0f;	// center에 있는 pos를 Aabb2D의 기준인 bottomLeft로 이동시킨다. 
 
-	// printf("pX: %f %f \n", aabb.Pos.x, aabb.Pos.x + aabb.Size.x);
-	// printf("pY: %f %f \n", aabb.Pos.y, aabb.Pos.y + aabb.Size.y);
-
+	// 다른 유저에게 해당 유저의 근접 공격 패킷을 보낸다. 
 	SC_MeleeAttack sc_packet;
 	sc_packet.EntityID = pPlayer->entityID;
 	sc_packet.Pos = pPlayer->Pos;
 	sc_packet.Dir = packet.Dir;
 	sc_packet.Speed = packet.Speed;
-
 	Link* pLink = m_playerList.pHead;
 	while (pLink != nullptr)
 	{
 		Link* pNextLink = pLink->pNext;
+
+		// 본인이거나 이미 죽었거나 대쉬 중인 유저와는 근접 공격 히트 체크를 하지 않는다. 
 		PlayerEntity* pPlayer_i = (PlayerEntity*)pLink->pItem;
 		if (
 			pPlayer_i == pPlayer || 
@@ -316,14 +333,14 @@ bool ArenaRoom::handleMeleeAttack(NetConn* pSender, CS_MeleeAttack& packet, bool
 			pPlayer_i->bIsDashing == true
 		)
 		{
+			pPlayer_i->Send(sc_packet, true);    // 패킷만 보낸다. 
 			pLink = pNextLink;
 
 			continue;
 		}
 
+		// 근접 공격 AABB와 overlap 확인 후 근접 공격 처리
 		Aabb2D playerAabb_i = pPlayer_i->GetAabb2D(0.0f);
-		// printf("pX_i: %f %f \n", playerAabb_i.Pos.x, playerAabb_i.Pos.x + playerAabb_i.Size.x);
-		// printf("pY_i: %f %f \n", playerAabb_i.Pos.y, playerAabb_i.Pos.y + playerAabb_i.Size.y);
 		if (aabb.IsOverlap(playerAabb_i, true))
 		{
 			player_vs_melee_attack(pPlayer, pPlayer_i, packet.Damage);
@@ -342,9 +359,7 @@ bool ArenaRoom::handleMeleeAttack(NetConn* pSender, CS_MeleeAttack& packet, bool
 
 bool ArenaRoom::handleProjectileAttack(NetConn* pSender, CS_ProjectileAttack& packet, bool bLog)
 {
-	// constexpr float PROJECTILE_SPEED = 16.0f;
-
-	if (packet.Damage < 0)
+	if (packet.Damage < 0)    // invalid packet
 	{
 		pSender->Disconnect();
 
@@ -352,11 +367,13 @@ bool ArenaRoom::handleProjectileAttack(NetConn* pSender, CS_ProjectileAttack& pa
 	}
 
 	PlayerEntity* pPlayer = getPlayerEntity(pSender);
-	if (pPlayer->IsAlive() == false)
+	if (pPlayer->IsAlive() == false)    // 이미 사망한 플레이어의 경우 무시한다. 
 		return true;
 
+	// 대쉬중이었다면 취소한다. 
 	pPlayer->bIsDashing = false;
 
+	// 클라이언트가 보낸 위치가 벽에 끼어있는지 확인한다. 
 	packet.dir.Normalize();
 	Vec2f posBackup = pPlayer->Pos;
 	pPlayer->Dir = packet.dir;
@@ -365,9 +382,12 @@ bool ArenaRoom::handleProjectileAttack(NetConn* pSender, CS_ProjectileAttack& pa
 	if (pRes != nullptr)
 		DebugBreak();
 
+	// 원거리 공격 entity의 생성 위치를 계산한다. 
 	Vec2f pos = packet.pos + Vec2f(0.0f, pPlayer->Size.y / 2.0f) + packet.dir * 0.5f;
 	Vec2f vel = packet.dir * packet.speed;
-	AttackEntity* pAttack = new AttackEntity(
+
+	// 원거리 공격 entity 초기화
+	AttackEntity* pAttack = new AttackEntity(    // TODO: create from pool
 		pPlayer->entityID, 
 		pos,					// pos
 		Vec2f(0.5f, 0.5f),		// size
@@ -379,6 +399,7 @@ bool ArenaRoom::handleProjectileAttack(NetConn* pSender, CS_ProjectileAttack& pa
 	pAttack->PlayerRegisterCount = pPlayer->RegisterCount;
 	AppendToList(&m_attackList, &pAttack->link);
 
+	// 다른 유저에게 해당 유저의 원거리 공격 패킷을 보낸다. 
 	SC_ProjectileAttack resPacket;
 	resPacket.entityID = projectileID;
 	resPacket.playerID = pPlayer->entityID;
@@ -404,6 +425,7 @@ bool ArenaRoom::handleRoomChat(NetConn* pSender, CS_RoomChat& packet, bool bLog)
 	sc_packet.nickname = pSession->GetNickname();
 	sc_packet.msg = packet.msg;
 
+	// 다른 유저에게 해당 유저의 채팅 패킷을 보낸다. 
 	Link* pLink = m_sessionList.pHead;
 	while (pLink != nullptr)
 	{
@@ -428,6 +450,7 @@ bool ArenaRoom::handleSpawnLocalPlayer(NetConn* pSender, CS_SpawnLocalPlayer& pa
 		return true;
 	}
 
+	// 스폰 위치 설정
 	Vec2f spawnPos = getSpawnPos();
 	pPlayer->Pos = spawnPos;
 	pPlayer->Dir = Vec2f(0.0f, -1.0f);
@@ -483,6 +506,7 @@ bool ArenaRoom::handleHpPortion(NetConn* pSender, arena_room::CS_HpPortion& pack
 	if (pPlayer->IsAlive() == false)
 		return true;
 
+	// hp 회복 처리
 	int oldHp = pPlayer->Hp;
 	pPlayer->Hp += packet.Amount;
 	pPlayer->Hp = std::min(pPlayer->Hp, pPlayer->MaxHp);
@@ -493,6 +517,7 @@ bool ArenaRoom::handleHpPortion(NetConn* pSender, arena_room::CS_HpPortion& pack
 	Link* pLink = m_sessionList.pHead;
 	while (pLink != nullptr)
 	{
+		// 클라이언트는 서버에서 HP 회복 확인 패킷을 받은 후 부터 쿨타임을 시작한다. 
 		Link* pNextLink = pLink->pNext;
 		ConnSession* pSession_i = (ConnSession*)pLink->pItem;
 		pSession_i->Send(sc_packet, true);
@@ -645,6 +670,7 @@ void ArenaRoom::updatePlayerEntity(float dt, PlayerEntity* pPlayer)
 	if (pPlayer->IsAlive() == false)
 		return;
 
+	// delta vector 설정
 	Vec2f delta;
 	if (pPlayer->bIsDashing)
 	{
@@ -676,6 +702,7 @@ void ArenaRoom::updatePlayerEntity(float dt, PlayerEntity* pPlayer)
 	{
 		assert(isInWall(pPlayer) == nullptr);
 
+		// 플레이어의 위치가 바뀌었을 수 있음으로 현재 위치에서 공격당했는지 확인한다. 
 		Aabb2D aabb = pPlayer->GetAabb2D(0.0f);
 		Link* pLink = m_attackList.pHead;
 		while (pLink != nullptr)
@@ -699,6 +726,7 @@ void ArenaRoom::updatePlayerEntity(float dt, PlayerEntity* pPlayer)
 	}
 	else
 	{
+		// delta vector를 다 소진시킬 때까지 반복한다. 
 		int sweepCount = 0;
 		LinkedList ignoreList;
 		CollisionInfo info;
@@ -767,6 +795,7 @@ void ArenaRoom::updateAttackEntity(float dt, AttackEntity* pAttack)
 	Vec2f delta = pAttack->Vel * dt;
 	if (delta == Vec2f(0.0f, 0.0f))
 	{
+		// 가만히 공중에 떠있어도 공격 가능하도록 처리한다. 
 		WallEntity* pWall = isInWall(pAttack);
 		if (pWall != nullptr)
 		{
@@ -798,6 +827,7 @@ void ArenaRoom::updateAttackEntity(float dt, AttackEntity* pAttack)
 	}
 	else
 	{
+		// delta를 다 소진시킨다. 
 		CollisionInfo info;
 		while (delta != Vec2f(0.0f, 0.0f))		// delta가 다 소진될 때 까지 반복한다. 
 		{
@@ -882,10 +912,12 @@ void ArenaRoom::player_vs_projectile_attack(PlayerEntity* pDamagedPlayer, Attack
 	assert(pDamagedPlayer->IsAlive());
 #endif // !_DEBUG_
 
+    // 데미지 감소 처리
 	pDamagedPlayer->Hp -= pAttack->Damage;
 	pDamagedPlayer->Hp = std::max(0, pDamagedPlayer->Hp);
 	bool isDead = pDamagedPlayer->Hp == 0;
 
+	// 만약 사망한 경우 despawn 처리한다. 
 	arena_room::SC_DespawnRemotePlayer sc_despawnRemote;
 	sc_despawnRemote.entityID = pDamagedPlayer->entityID;
 	sc_despawnRemote.killerNickname = L"";
@@ -901,6 +933,7 @@ void ArenaRoom::player_vs_projectile_attack(PlayerEntity* pDamagedPlayer, Attack
 		}
 	}
 
+	// 대미지 패킷 전송
 	arena_room::SC_ProjectileDamage sc_projectileDamage;
 	sc_projectileDamage.projectileID = pAttack->entityID;
 	sc_projectileDamage.targetID = pDamagedPlayer->entityID;
@@ -950,21 +983,25 @@ void ArenaRoom::player_vs_melee_attack(PlayerEntity* pAttackPlayer, PlayerEntity
 	assert(pDamagedPlayer->IsAlive());
 #endif // !_DEBUG_
 
+    // 데미지 처리
 	pDamagedPlayer->Hp -= damage;
 	pDamagedPlayer->Hp = std::max(0, pDamagedPlayer->Hp);
 	bool isDead = pDamagedPlayer->Hp == 0;
 	if (isDead)
 		pDamagedPlayer->Vel = Vec2f(0.0f, 0.0f);
 
+	// 사망한 경우 전송되는 패킷
 	arena_room::SC_DespawnRemotePlayer sc_despawnRemote;
 	sc_despawnRemote.entityID = pDamagedPlayer->entityID;
 	sc_despawnRemote.killerNickname = pAttackPlayer->GetNickname();
 
+	// 데미지 패킷
 	arena_room::SC_MeleeDamage sc_projectileDamage;
 	sc_projectileDamage.TargetID = pDamagedPlayer->entityID;
 	sc_projectileDamage.Damage = damage;
 	sc_projectileDamage.Hp = pDamagedPlayer->Hp;
 	
+	// 패킷 전송
 	ConnSession* pDamagedSession = pDamagedPlayer->pConnSession;
 	Link* pLink = m_sessionList.pHead;
 	while (pLink != nullptr)
