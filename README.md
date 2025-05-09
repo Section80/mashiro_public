@@ -4,7 +4,7 @@ IOCP 게임 서버
   
 [![Video Label](http://img.youtube.com/vi/6Io47q-b-XQ/0.jpg)](http://www.youtube.com/watch?v=6Io47q-b-XQ)  
 
-- 시연 영상: [유튜브 링크](https://www.youtube.com/watch?v=6Io47q-b-XQ)
+- 시연 영상: [유튜브 링크(이미지 클릭)](https://www.youtube.com/watch?v=6Io47q-b-XQ)
 - 설명 자료: [파일 링크(PDF)](https://github.com/Section80/mashiro_public/blob/main/%EC%84%A4%EB%AA%85%20%EC%9E%90%EB%A3%8C.pdf)  
   
   
